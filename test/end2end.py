@@ -243,27 +243,36 @@ class TestEnd2End(unittest.TestCase):
 
     def test_option_double(self):
         """Test --double command line option"""
+        ec, out = run('hostname')
+        hostname = out.strip()
+
         install_fake_mpirun('mpirun', self.tmpdir, 'impi', '5.1.2', txt=FAKE_MPIRUN_MACHINEFILE)
         ec, out = run([sys.executable, self.mympiscript, '--sched', 'local', '--double', 'hostname'])
         # set_pbs_env() sets 2 cores, so double is 4
-        self.assertEqual(out, ('\n'.join(['localhost'] * 4)))
+        self.assertEqual(out, ('\n'.join([hostname] * 4)))
         self.assertEqual(len(out.split('\n')), 4)
 
 
     def test_option_multi(self):
         """Test --multi command line option"""
+        ec, out = run('hostname')
+        hostname = out.strip()
+
         install_fake_mpirun('mpirun', self.tmpdir, 'impi', '5.1.2', txt=FAKE_MPIRUN_MACHINEFILE)
         ec, out = run([sys.executable, self.mympiscript,  '--sched', 'local','--multi', '3', '--', 'hostname'])
         # set_pbs_env() sets 2 cores, so *3 = 6
-        self.assertEqual(out, ('\n'.join(['localhost'] * 6)))
+        self.assertEqual(out, ('\n'.join([hostname] * 6)))
         self.assertEqual(len(out.split('\n')), 6)
 
 
     def test_option_hybrid(self):
         """Test --hybrid command line option"""
+        ec, out = run('hostname')
+        hostname = out.strip()
+
         install_fake_mpirun('mpirun', self.tmpdir, 'impi', '5.1.2', txt=FAKE_MPIRUN_MACHINEFILE)
         ec, out = run([sys.executable, self.mympiscript,  '--sched', 'local','--hybrid', '5', 'hostname'])
-        self.assertEqual(out, ('\n'.join(['localhost'] * 5)))
+        self.assertEqual(out, ('\n'.join([hostname] * 5)))
         self.assertEqual(len(out.split('\n')), 5)
 
 
