@@ -376,12 +376,12 @@ class TestEnd2End(unittest.TestCase):
         install_fake_mpirun('mpirun', self.tmpdir, 'impi', '5.0.3')
 
         # default behavior
-        ec, out = run([sys.executable, self.mympiscript, '--sched', 'local', 'hostname'])
+        ec, out = run([sys.executable, self.mympiscript, 'hostname'])
         regex = r'-bootstrap pbsdsh'
         self.assertTrue(re.search(regex, out), "-bootstrap option is pbsdsh (default for impi/5.1): " + out)
 
         # if --launcher ssh is used, behaviour depends on whether or not pbsdsh are available
-        ec, out = run([sys.executable, self.mympiscript, '--sched', 'local', '--launcher', 'ssh', 'hostname'])
+        ec, out = run([sys.executable, self.mympiscript, '--launcher', 'ssh', 'hostname'])
 
         regexes = [
             (r'-bootstrap ssh', "bootstrap option is ssh (possibly with -bootstrap-exec option)"),
