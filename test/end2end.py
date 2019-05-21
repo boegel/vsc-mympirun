@@ -1,5 +1,5 @@
 #
-# Copyright 2012-2017 Ghent University
+# Copyright 2012-2019 Ghent University
 #
 # This file is part of vsc-mympirun,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -71,6 +71,8 @@ fi
 
 def install_fake_mpirun(cmdname, path, mpi_name, mpi_version, txt=None):
     """Install fake mpirun command with given name in specified location"""
+    if not os.path.exists(path):
+        os.makedirs(path)
     fake_mpirun = os.path.join(path, cmdname)
     if not txt:
         txt = FAKE_MPIRUN
@@ -136,19 +138,25 @@ class TestEnd2End(unittest.TestCase):
         self.assertTrue(regex.match(out.strip()), "Pattern '%s' found in: %s" % (regex.pattern, out))
 
     def test_sched(self):
-        """ Test --sched(type) option """
-        install_fake_mpirun('mpirun', self.tmpdir, 'impi', '5.1.2')
+        """Test --sched(type) option."""
+
         regex_tmpl = "^fake mpirun called with args: .*%s.* hostname$"
-        testcases = {
-            'impirun': "-genv I_MPI_DEVICE 'shm'",
-            'ompirun': "--mca btl 'sm,.*self'",
-        }
-        for key in testcases:
-            ec, out = run([sys.executable, self.mympiscript, '--setmpi', key, '--sched', 'local', 'hostname'])
+
+        def run_test(mpi_name, mpi_ver, mpirun, pattern):
+            """Utilitiy function to run test for a specific case."""
+            tmpdir = os.path.join(self.tmpdir, '%s-%s' % (mpi_name, mpi_ver))
+            install_fake_mpirun('mpirun', tmpdir, mpi_name, mpi_ver)
+
+            ec, out = run([sys.executable, self.mympiscript, '--setmpi', mpirun, '--sched', 'local', 'hostname'])
             self.assertEqual(ec, 0, "Command exited normally: exit code %s; output: %s" % (ec, out))
-            regex = re.compile(regex_tmpl % testcases[key])
+            regex = re.compile(regex_tmpl % pattern)
             self.assertTrue(regex.match(out.strip()), "Pattern '%s' found in: %s" % (regex.pattern, out))
 
+        run_test('impi', '4.0.0', 'impirun', "-genv I_MPI_DEVICE shm")
+        run_test('impi', '5.1.2', 'impirun', "-genv I_MPI_FABRICS shm")
+        run_test('openmpi', '1.5', 'ompirun', "--mca btl sm,.*self")
+        run_test('openmpi', '2.5', 'ompirun', "--mca btl sm,.*self")
+        run_test('openmpi', '3.1', 'ompirun', "--mca btl vader,.*self")
 
     def test_output(self):
         """ Test --output option """
@@ -453,8 +461,8 @@ class TestEnd2End(unittest.TestCase):
         self.assertEqual(ec, 0, "Command exited normally: exit code %s; output: %s" % (ec, out))
 
         # make sure output includes defined environment variables
-        # and "--mca orte_keep_fqdn_hostnames '1'"
-        mca_keep_fqdn = "^fake mpirun called with args:.*--mca orte_keep_fqdn_hostnames '1'.*hostname$"
+        # and "--mca orte_keep_fqdn_hostnames 1"
+        mca_keep_fqdn = "^fake mpirun called with args:.*--mca orte_keep_fqdn_hostnames 1 .*hostname$"
         for pattern in ['^HOME=', '^USER=', '^SLURM_JOBID=', mca_keep_fqdn]:
             regex = re.compile(pattern, re.M)
             self.assertTrue(regex.search(out), "Pattern '%s' found in: %s" % (regex.pattern, out))

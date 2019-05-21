@@ -1,5 +1,5 @@
 #
-# Copyright 2011-2018 Ghent University
+# Copyright 2011-2019 Ghent University
 #
 # This file is part of vsc-mympirun,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -32,6 +32,7 @@ import os
 import socket
 import tempfile
 from vsc.utils.missing import nub
+from vsc.utils.run import CmdList
 
 from vsc.mympirun.mpi.mpi import MPI, RM_HYDRA_LAUNCHER, version_in_range, which
 
@@ -72,7 +73,7 @@ class IntelMPI(MPI):
 
     OPTS_FROM_ENV_FLAVOR_PREFIX = ['I_MPI']
 
-    OPTS_FROM_ENV_TEMPLATE = "-envlist %(commaseparated)s"
+    OPTS_FROM_ENV_TEMPLATE = ['-envlist', '%(commaseparated)s']
 
     def _has_hydra(self):
         """Has HYDRA or not"""
@@ -127,7 +128,10 @@ class IntelMPI(MPI):
         if self.options.hybrid is not None and self.options.hybrid > 1:
             self.mpiexec_global_options["I_MPI_CPUINFO"] = "auto"
 
-            self.mpiexec_global_options["I_MPI_PIN_DOMAIN"] = "auto:compact"
+            if self.pinning_override_type in ('spread', 'scatter'):
+                self.mpiexec_global_options["I_MPI_PIN_DOMAIN"] = "auto:scatter"
+            else:
+                self.mpiexec_global_options["I_MPI_PIN_DOMAIN"] = "auto:compact"
 
             # this only affects libiomp5 usage (ie intel compilers!)
             self.mpiexec_global_options["KMP_AFFINITY"] = "compact"
@@ -168,11 +172,11 @@ class IntelMPI(MPI):
 
         self.log.debug("pinning_override: type %s ", self.pinning_override_type)
 
-        cmd = ""
+        cmd = CmdList()
         if self.pinning_override_type in ('packed', 'compact', 'bunch'):
-            cmd = "-env I_MPI_PIN_PROCESSOR_LIST=allcores:map=bunch"
+            cmd.add(['-env', 'I_MPI_PIN_PROCESSOR_LIST=allcores:map=bunch'])
         elif self.pinning_override_type in ('spread', 'scatter'):
-            cmd = "-env I_MPI_PIN_PROCESSOR_LIST=allcores"
+            cmd.add(['-env', 'I_MPI_PIN_PROCESSOR_LIST=allcores:map=%s' % self.pinning_override_type])
         else:
             self.log.raiseException("pinning_override: unsupported pinning_override_type  %s" %
                                     self.pinning_override_type)
