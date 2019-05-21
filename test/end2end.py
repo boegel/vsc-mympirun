@@ -439,6 +439,7 @@ class TestEnd2End(unittest.TestCase):
             extra_opts = ['--hybrid', '9']
             ec, out = run(cmd + extra_opts + ['hostname'])
             self.assertEqual(ec, 0)
+            print out
 
             regex = re.compile('^mpirun .* -np 9 .* hostname$')
             self.assertTrue(regex.search(out.strip()), "Pattern '%s' found in: %s" % (regex.pattern, out))
