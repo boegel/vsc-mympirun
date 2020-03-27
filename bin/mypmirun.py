@@ -1,5 +1,6 @@
+#!/usr/bin/env python
 #
-# Copyright 2011-2020 Ghent University
+# Copyright 2009-2020 Ghent University
 #
 # This file is part of vsc-mympirun,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -23,7 +24,13 @@
 # along with vsc-mympirun.  If not, see <http://www.gnu.org/licenses/>.
 #
 """
-Allow other packages to extend this namespace, zip safe setuptools style
+A PMI wrapper
 """
-import pkg_resources
-pkg_resources.declare_namespace(__name__)
+
+import vsc.mympirun.pmi.mpi as mpim
+import vsc.mympirun.pmi.sched as schedm
+from vsc.mympirun.pmi.option import MypmirunOption
+from vsc.mympirun.main import main
+
+if __name__ == '__main__':
+    main(mpim, MypmirunOption, schedm)

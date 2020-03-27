@@ -1,5 +1,6 @@
+#!/usr/bin/env python
 #
-# Copyright 2011-2020 Ghent University
+# Copyright 2009-2020 Ghent University
 #
 # This file is part of vsc-mympirun,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -23,7 +24,27 @@
 # along with vsc-mympirun.  If not, see <http://www.gnu.org/licenses/>.
 #
 """
-Allow other packages to extend this namespace, zip safe setuptools style
+An srun based non-mpi multi process wrapper
 """
-import pkg_resources
-pkg_resources.declare_namespace(__name__)
+
+import sys
+from vsc.utils import fancylogger
+
+from vsc.mympirun.factory import getinstance
+from vsc.mympirun.pmi.mpi import Tasks as mpi
+from vsc.mympirun.pmi.slurm import Tasks as sched
+from vsc.mympirun.pmi.option import TasksOption
+
+
+def main():
+    try:
+        optionparser = TasksOption(ismpirun=False)
+        instance = getinstance(mpi, sched, optionparser)
+        instance.main()
+    except Exception:
+        fancylogger.getLogger().exception("Main failed")
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()

@@ -1,5 +1,5 @@
 #
-# Copyright 2011-2018 Ghent University
+# Copyright 2011-2020 Ghent University
 #
 # This file is part of vsc-mympirun,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -29,7 +29,8 @@ Documentation can be found at https://www.mpich.org/documentation/guides/
 """
 import os
 
-from vsc.mympirun.mpi.mpi import MPI, version_in_range
+from vsc.mympirun.common import version_in_range
+from vsc.mympirun.mpi.mpi import MPI
 from vsc.utils.run import run
 
 
@@ -45,7 +46,7 @@ class MVAPICH2Hydra(MPI):
 
     OPTS_FROM_ENV_FLAVOR_PREFIX = ['MV2', 'HYDRA']
 
-    OPTS_FROM_ENV_TEMPLATE = "-envlist %(commaseparated)s"
+    OPTS_FROM_ENV_TEMPLATE = ['-envlist', '%(commaseparated)s']
 
     def prepare(self):
         super(MVAPICH2Hydra, self).prepare()
@@ -68,7 +69,7 @@ class MVAPICH2Hydra(MPI):
         Create the acual mpirun command
         MVAPICH2Hydra doesn't need mpdboot options
         """
-        self.mpirun_cmd += self.mpiexec_options
+        self.mpirun_cmd.add(self.mpiexec_options)
 
 
 class MVAPICH2(MVAPICH2Hydra):
@@ -88,7 +89,7 @@ class MVAPICH2(MVAPICH2Hydra):
     def make_mpdboot_options(self):
         """Small fix"""
 
-        self.mpdboot_options.append("--totalnum=%s" % len(self.nodes_uniq))
+        self.mpdboot_options.add("--totalnum=%s" % len(self.nodes_uniq))
 
         super(MVAPICH2, self).make_mpdboot_options()
 
@@ -122,7 +123,7 @@ class MPICH2Hydra(MVAPICH2Hydra):
         # add pinning
         options = super(MPICH2Hydra, self).get_mpiexec_global_options()
         if self.options.pinmpi:
-            options.extend(['-binding', 'rr', '-topolib', 'hwloc'])
+            options.add(['-binding', 'rr', '-topolib', 'hwloc'])
         return options
 
 
@@ -140,5 +141,5 @@ class MPICH2(MVAPICH2):
         # add pinning
         options = super(MPICH2, self).get_mpiexec_global_options()
         if self.options.pinmpi:
-            options.extend(['-binding', 'rr', '-topolib', 'hwloc'])
+            options.add(['-binding', 'rr', '-topolib', 'hwloc'])
         return options

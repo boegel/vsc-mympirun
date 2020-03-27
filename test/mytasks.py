@@ -1,5 +1,5 @@
 #
-# Copyright 2011-2020 Ghent University
+# Copyright 2019-2020 Ghent University
 #
 # This file is part of vsc-mympirun,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -23,7 +23,31 @@
 # along with vsc-mympirun.  If not, see <http://www.gnu.org/licenses/>.
 #
 """
-Allow other packages to extend this namespace, zip safe setuptools style
+wurker tests
 """
-import pkg_resources
-pkg_resources.declare_namespace(__name__)
+
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+import os
+import re
+
+from pmi_utils import SLURM_2NODES, PMITest
+
+
+class TasksEnd2End(PMITest):
+    def setUp(self):
+        """Prepare to run test."""
+        super(TasksEnd2End, self).setUp()
+        self.script = os.path.join(os.path.dirname(self.script), 'mytasks.py')
+
+    def test_ompi4_slurm(self):
+        self.set_env(SLURM_2NODES)
+
+        # take into account that path may have characters like '(' and ')'
+        cwd = re.escape(os.getcwd())
+        pattern = '--chdir=' + cwd
+        pattern += ' --nodes=2 --ntasks=64 --cpus-per-task=1 --mem-per-cpu=7600'
+        pattern += ' --export=ALL --mpi=none --output=xyz --abc=123 --def=456'
+        self.pmirun(['--debug', '--output=xyz', '--pass=abc=123,def=456', 'arg1', 'arg2'],
+                    pattern=pattern+' arg1 arg2$')

@@ -1,5 +1,5 @@
 #
-# Copyright 2011-2018 Ghent University
+# Copyright 2011-2020 Ghent University
 #
 # This file is part of vsc-mympirun,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -29,6 +29,7 @@ Base MPI class, all actual classes should inherit from this one
 @author: Jeroen De Clerck
 @author: Caroline De Brouwer
 """
+from __future__ import print_function
 
 import os
 import random
@@ -38,29 +39,20 @@ import shutil
 import socket
 import stat
 import string
-import subprocess
 import sys
 import time
 
-from distutils.version import LooseVersion
 from IPy import IP
 from vsc.utils.fancylogger import getLogger
-from vsc.utils.missing import get_subclasses, nub
-from vsc.utils.run import RunNoShell, RunAsyncLoopStdout, RunFile, RunLoop, run
-
-# part of the directory that contains the installed fakes
-INSTALLATION_SUBDIRECTORY_NAME = '(VSC-tools|(?:vsc-)?mympirun)'
-# the fake subdir to contain the fake mpirun symlink
-# also hardcoded in setup.py !
-FAKE_SUBDIRECTORY_NAME = 'fake'
+from vsc.mympirun.common import MpiBase
+from vsc.utils.missing import nub
+from vsc.utils.run import CmdList, RunNoShell, RunAsyncLoopStdout, RunFile, RunLoop, run
 
 RM_HYDRA_LAUNCHER = 'RM_HYDRA_LAUNCHER'
 
 # size of dir in bytes
 TEMPDIR_WARN_SIZE = 100000
 TEMPDIR_ERROR_SIZE = 1000000
-
-LOGGER = getLogger()
 
 TIMEOUT_CODE = 124
 TIMEOUT_WARNING = """mympirun has been running for %s seconds without seeing any output.
@@ -70,112 +62,6 @@ If this warning is printed too soon and the program is doing useful work without
 you can increase the timeout threshold via --output-check-timeout (current setting: %s seconds)"""
 
 TIMEOUT_FATAL_MSG = "This is considered fatal (unless --disable-output-check-fatal is used)"
-
-
-def what_mpi(name):
-    """
-    Return the path of the selected mpirun and its class.
-
-    @param name: The name of the executable used to run mympirun
-
-    @return: A triplet containing the following variables:
-      - The path to the executable used to run mympirun (should be the path to an mpirun implementation)
-      - The corresponding python class of the MPI variant
-      - The python classes of the supported MPI flavors (from the various .py files in mympirun/mpi)
-    """
-
-    # The coupler is also a subclass of MPI, but it isn't and MPI implementation
-    supp_mpi_impl = [x for x in get_subclasses(MPI) if x.__name__ != 'Coupler']  # supported MPI implementations
-
-    # remove fake mpirun from $PATH
-    stripfake()
-
-    # get the path of the mpirun executable
-    mpirun_path = which('mpirun')
-    if mpirun_path is None:
-        # no MPI implementation installed
-        LOGGER.warn("no mpirun command found")
-        return None, None, supp_mpi_impl
-
-    scriptname = os.path.basename(os.path.abspath(name))
-
-    # check if mympirun was called by a known mpirun alias (like
-    # ompirun for OpenMPI or mhmpirun for mpich)
-    for mpi in supp_mpi_impl:
-        if mpi._is_mpiscriptname_for(scriptname):
-            LOGGER.debug("%s was used to call mympirun", scriptname)
-            return scriptname, mpi, supp_mpi_impl
-
-    # mympirun was not called through a known alias, so find out which MPI
-    # implementation the user has installed
-    for mpi in supp_mpi_impl:
-        if mpi._is_mpirun_for(mpirun_path):
-            return scriptname, mpi, supp_mpi_impl
-
-    # no specific flavor found, default to mpirun_path
-    LOGGER.warn("The executable that called mympirun (%s) isn't supported, defaulting to %s", name, mpirun_path)
-    return mpirun_path, None, supp_mpi_impl
-
-
-def stripfake():
-    """
-    If the user loaded the vsc-mympirun module but called mpirun, some $PATH trickery catches the attempt.
-    This function removes the fake path trickery from $PATH (assumes (VSC-tools|mympirun)/1.0.0/bin/fake).
-    """
-
-    LOGGER.debug("PATH before stripfake(): %s", os.environ['PATH'])
-
-    # compile a regex that matches the faked mpirun
-    reg_fakepath = re.compile(
-        r"" + os.sep.join(['.*?',
-                           INSTALLATION_SUBDIRECTORY_NAME + '.*?',
-                           'bin',
-                           '%(fake_subdir)s(%(sep)s[^%(sep)s]*)?$' %
-                           {
-                               'fake_subdir': FAKE_SUBDIRECTORY_NAME,
-                               'sep': os.sep
-                           }
-                          ]))
-
-    oldpath = os.environ.get('PATH', '').split(os.pathsep)
-
-    # remove all $PATH elements that match the fakepath regex
-    os.environ['PATH'] = os.pathsep.join([x for x in oldpath if not reg_fakepath.match(x)])
-
-    LOGGER.debug("PATH after stripfake(): %s", os.environ['PATH'])
-    return
-
-
-def which(cmd):
-    """
-    Return (first) path in $PATH for specified command, or None if command is not found.
-
-    taken from easybuild/tools/filetools.py, 6/7/2016
-    """
-    paths = os.environ.get('PATH', '').split(os.pathsep)
-    for path in paths:
-        cmd_path = os.path.join(path, cmd)
-        # only accept path is command is there, and both readable and executable
-        if os.access(cmd_path, os.R_OK | os.X_OK):
-            LOGGER.info("Command %s found at %s", cmd, cmd_path)
-            return cmd_path
-    LOGGER.warning("Could not find command '%s' (with permissions to read/execute it) in $PATH (%s)", cmd, paths)
-    return None
-
-
-def version_in_range(version, lower_limit, upper_limit):
-    """
-    Check whether version is in specified range
-
-    :param lower_limit: lower limit for version (inclusive), no lower limit if None
-    :param upper_limit: upper limit for version (exclusive), no upper limit if None
-    """
-    in_range = True
-    if lower_limit is not None and LooseVersion(version) < LooseVersion(lower_limit):
-        in_range = False
-    if upper_limit is not None and LooseVersion(version) >= LooseVersion(upper_limit):
-        in_range = False
-    return in_range
 
 
 class RunMPI(RunNoShell):
@@ -256,18 +142,12 @@ class RunAsyncMPI(RunAsyncLoopStdout, RunMPI):
         super(RunAsyncMPI, self)._loop_process_output(output)
 
 
-class MPI(object):
+class MPI(MpiBase):
     """
     Base MPI class to generate the mpirun command line.
 
     To add a new MPI class just create a new class that extends the MPI class, see http://stackoverflow.com/q/456672
     """
-
-    RUNTIMEOPTION = None
-
-    _mpirun_for = None
-    _mpiscriptname_for = []
-    _mpirun_version = None
 
     MPIRUN_LOCALHOSTNAME = 'localhost'
 
@@ -282,12 +162,12 @@ class MPI(object):
 
     PINNING_OVERRIDE_METHOD = 'numactl'
 
-    REMOTE_OPTION_TEMPLATE = "--rsh=%(rsh)s"
+    REMOTE_OPTION_TEMPLATE = ['--rsh=%(rsh)s']
     MPDBOOT_OPTIONS = []
     MPDBOOT_SET_INTERFACE = True
 
-    MPIEXEC_TEMPLATE_GLOBAL_OPTION = "-genv %(name)s '%(value)s'"
-    OPTS_FROM_ENV_TEMPLATE = "-x '%(name)s'"
+    MPIEXEC_TEMPLATE_GLOBAL_OPTION = ['-genv', '%(name)s', "%(value)s"]
+    OPTS_FROM_ENV_TEMPLATE = ['-x', '%(name)s']
     MPIEXEC_OPTIONS = []
 
     MODULE_ENVIRONMENT_VARIABLES = ['MODULEPATH', 'LOADEDMODULES', 'MODULESHOME']
@@ -335,77 +215,6 @@ class MPI(object):
         if not self.cmdargs:
             self.log.raiseException("__init__: no executable or command provided")
 
-    # factory methods for MPI
-    @classmethod
-    def _is_mpirun_for(cls, mpirun_path):
-        """
-        Check if this class provides support for active mpirun command.
-
-        @param cls: the class that calls this function
-        @return: True if mpirun is located in $EBROOT*, and if $EBVERSION* value matches version requirement
-        """
-        res = False
-
-        mpiname = cls._mpirun_for
-        if mpiname:
-            LOGGER.debug("Checking whether %s (MPI name: %s) matches with %s..." % (cls, mpiname, mpirun_path))
-
-            # first, check whether specified mpirun location is in $EBROOT<NAME>
-            root_var_name = 'EBROOT' + mpiname.upper()
-            mpiroot = os.getenv(root_var_name)
-            if mpiroot:
-                LOGGER.debug("found $%s: %s" % (root_var_name, mpiroot))
-                # try to determine resolved path for both, this may file if we hit a non-existing paths
-                try:
-                    mpirun_path = os.path.realpath(mpirun_path)
-                    mpiroot = os.path.realpath(mpiroot)
-                except (IOError, OSError) as err:
-                    LOGGER.debug("Failed to resolve paths %s and %s, ignoring it: %s" % (mpirun_path, mpiroot, err))
-
-                # only if mpirun location is in $EBROOT* location, we should check the version too
-                if mpirun_path.startswith(mpiroot):
-                    LOGGER.debug("%s is in subdirectory of %s" % (mpirun_path, mpiroot))
-
-                    # next, check wheter version meets requirements (checked via _mpirun_version function)
-                    version_var_name = 'EBVERSION' + mpiname.upper()
-                    version = os.getenv(version_var_name)
-
-                    # mympirun is not compatible with OpenMPI version 2.0: this version contains a bug
-                    # see https://github.com/hpcugent/vsc-mympirun/issues/113
-                    if mpiname == "OpenMPI" and version_in_range(version, "2.0", "2.1"):
-                        LOGGER.error(("OpenMPI 2.0.x uses a different naming protocol for nodes. As a result, it isn't "
-                                      "compatible with mympirun. This issue is not present in OpenMPI 1.x and it has "
-                                      "been fixed in OpenMPI 2.1 and further."))
-                        sys.exit(1)
-
-                    mpirun_version_check = getattr(cls, '_mpirun_version', None)
-                    if mpirun_version_check and version:
-                        res = mpirun_version_check(version)
-                        LOGGER.debug("found $%s: %s => match for %s: %s" % (version_var_name, version, cls, res))
-                    elif mpirun_version_check is None:
-                        LOGGER.debug("no mpirun version provided, skipping version check, match for %s" % cls)
-                        res = True
-                    else:
-                        LOGGER.debug("environment variable $%s not found, skipping version check" % version_var_name)
-                else:
-                    LOGGER.debug("%s is NOT in subdirectory of %s, no match for %s" % (mpirun_path, mpiroot, cls))
-            else:
-                LOGGER.debug("$%s not defined, no match for %s" % (root_var_name, cls))
-
-        return res
-
-    @classmethod
-    def _is_mpiscriptname_for(cls, scriptname):
-        """
-        Check if this class provides support for scriptname.
-
-        @param cls: the class that calls this function
-        @param scriptname: the executable that called mympirun
-
-        @return: true if $scriptname is defined as an mpiscriptname of $cls
-        """
-
-        return scriptname in cls._mpiscriptname_for
 
     # other general functionality
     def _has_hydra(self):
@@ -514,7 +323,7 @@ class MPI(object):
         device_ip_reg_map = {
             'eth': r"ether.*?\n.*?inet\s+(\d+\.\d+.\d+.\d+/\d+)",
             'ib': r"infiniband.*?\n.*?inet\s+(\d+\.\d+.\d+.\d+/\d+)",
-            }
+        }
 
         if self.netmasktype not in device_ip_reg_map:
             self.log.raiseException("set_netmask: can't get netmask for %s: unknown mode (device_ip_reg_map %s)" %
@@ -697,7 +506,6 @@ class MPI(object):
         elif total_size >= TEMPDIR_WARN_SIZE:
             self.log.warn("the size of %s is currently %s ", self.mympirunbasedir, total_size)
 
-
         destdir = os.path.join(self.mympirunbasedir, "%s_%s" % (self.sched_id, time.strftime("%Y%m%d_%H%M%S")))
         if not os.path.exists(destdir):
             try:
@@ -800,36 +608,36 @@ class MPI(object):
     def make_mpdboot_options(self):
         """Add various options to mpdboot_options"""
 
-        self.mpdboot_options = self.MPDBOOT_OPTIONS[:]
+        self.mpdboot_options = CmdList(*self.MPDBOOT_OPTIONS)
 
         # add the mpd nodefile to mpdboot options
-        self.mpdboot_options.append("--file=%s" % self.mpdboot_node_filename)
+        self.mpdboot_options.add("--file=%s" % self.mpdboot_node_filename)
 
         # add the interface to mpdboot options
         if self.MPDBOOT_SET_INTERFACE:
             if self.has_hydra:
                 localmachine = self.mpdboot_localhost_interface[1]
-                iface = "-iface %s" % localmachine
+                iface = ['-iface', localmachine]
             else:
                 localmachine = self.mpdboot_localhost_interface[0]
-                iface = "--ifhn=%s" % localmachine
+                iface = ['--ifhn=%s' % localmachine]
             self.log.debug('Set mpdboot interface option "%s"', iface)
-            self.mpdboot_options.append(iface)
+            self.mpdboot_options.add(iface)
         else:
             self.log.debug('No mpdboot interface option')
 
         # add the number of mpi processes (aka mpi universe) to mpdboot options
         if self.options.universe is not None and self.options.universe > 0 and not self.has_hydra:
             local_nodename = self.mpdboot_localhost_interface[0]
-            self.mpdboot_options.append("--ncpus=%s" % self.get_universe_ncpus()[local_nodename])
+            self.mpdboot_options.add("--ncpus=%s" % self.get_universe_ncpus()[local_nodename])
 
         # set verbosity
         if self.options.mpdbootverbose:
-            self.mpdboot_options.append("--verbose")
+            self.mpdboot_options.add("--verbose")
 
         # mpdboot rsh command
         if not self.has_hydra:
-            self.mpdboot_options.append(self.REMOTE_OPTION_TEMPLATE % {'rsh': self.get_rsh()})
+            self.mpdboot_options.add(self.REMOTE_OPTION_TEMPLATE, tmpl_vals={'rsh': self.get_rsh()})
 
     ### BEGIN mpiexec ###
     def set_mpiexec_global_options(self):
@@ -869,41 +677,42 @@ class MPI(object):
 
     def set_mpiexec_options(self):
         """Add various options to mpiexec_options."""
-        self.mpiexec_options = self.MPIEXEC_OPTIONS[:]
+        self.mpiexec_options = CmdList(*self.MPIEXEC_OPTIONS)
 
         if self.has_hydra:
             self.make_mpiexec_hydra_options()
         else:
-            self.mpiexec_options.append("-machinefile %s" % self.mpiexec_node_filename)
+            self.mpiexec_options.add(['-machinefile', self.mpiexec_node_filename])
 
         # mpdboot global variables
-        self.mpiexec_options += self.get_mpiexec_global_options()
+        self.mpiexec_options.add(self.get_mpiexec_global_options())
 
         # number of procs to start
         if self.options.universe is not None and self.options.universe > 0:
-            self.mpiexec_options.append("-np %s" % self.options.universe)
+            self.mpiexec_options.add(['-np', str(self.options.universe)])
         elif self.options.hybrid:
-            self.mpiexec_options.append("-np %s" % (len(self.nodes_uniq) * self.options.hybrid * self.multiplier))
+            num_proc = len(self.nodes_uniq) * self.options.hybrid * self.multiplier
+            self.mpiexec_options.add(['-np', str(num_proc)])
         else:
-            self.mpiexec_options.append("-np %s" % (self.nodes_tot_cnt * self.multiplier))
+            self.mpiexec_options.add(['-np', str(self.nodes_tot_cnt * self.multiplier)])
 
         # pass local env variables to mpiexec
-        self.mpiexec_options += self.get_mpiexec_opts_from_env()
+        self.mpiexec_options.add(self.get_mpiexec_opts_from_env())
 
     def make_mpiexec_hydra_options(self):
         """Hydra specific mpiexec options."""
         self.get_hydra_info()
         # see https://software.intel.com/en-us/articles/controlling-process-placement-with-the-intel-mpi-library
         # --machinefile keeps the imbalance if there is one; --hostfile doesn't
-        self.mpiexec_options.append("--machinefile %s" % self.mpiexec_node_filename)
+        self.mpiexec_options.add(['--machinefile', self.mpiexec_node_filename])
         if self.options.branchcount is not None:
-            self.mpiexec_options.append("--branch-count %d" % self.options.branchcount)
+            self.mpiexec_options.add(['--branch-count', str(self.options.branchcount)])
 
         if getattr(self, 'HYDRA_RMK', None) is not None:
             rmk = [x for x in self.HYDRA_RMK if x in self.hydra_info.get('rmk', [])]
             if len(rmk) > 0:
                 self.log.debug("make_mpiexec_hydra_options: HYDRA: rmk %s, using first", rmk)
-                self.mpiexec_options.append("-rmk %s" % rmk[0])
+                self.mpiexec_options.add(['-rmk', rmk[0]])
             else:
                 self.log.debug("make_mpiexec_hydra_options: no rmk from HYDRA_RMK %s and hydra_info %s",
                                self.HYDRA_RMK, self.hydra_info)
@@ -929,7 +738,7 @@ class MPI(object):
             launcher = self.RM_HYDRA_LAUNCHER
 
         if not self.is_local():
-            self.mpiexec_options.append("-%s %s" % (self.HYDRA_LAUNCHER_NAME, launcher))
+            self.mpiexec_options.add(['-%s' % self.HYDRA_LAUNCHER_NAME, launcher])
 
         # when using ssh launcher, use custom pbsssh wrapper as exec
         if launcher == 'ssh':
@@ -940,7 +749,7 @@ class MPI(object):
 
             if launcher_exec:
                 self.log.debug("make_mpiexec_hydra_options: HYDRA using launcher exec %s", launcher_exec)
-                self.mpiexec_options.append("-%s-exec %s" % (self.HYDRA_LAUNCHER_NAME, launcher_exec))
+                self.mpiexec_options.add(['-%s-exec' % self.HYDRA_LAUNCHER_NAME, launcher_exec])
             else:
                 self.log.debug("make_mpiexec_hydra_options: no launcher exec")
 
@@ -997,7 +806,7 @@ class MPI(object):
 
         @return: the final list of options, including the correct command line argument for the mpi flavor
         """
-        global_options = []
+        opts = CmdList()
 
         for key, val in self.mpiexec_global_options.items():
             if key in self.mpiexec_opts_from_env:
@@ -1006,11 +815,11 @@ class MPI(object):
             else:
                 # insert the keyvalue pair into the correct command line argument
                 # the command for setting the environment variable depends on the mpi flavor
-                global_options.append(self.MPIEXEC_TEMPLATE_GLOBAL_OPTION % {'name': key, "value": val})
+                opts.add(self.MPIEXEC_TEMPLATE_GLOBAL_OPTION, tmpl_vals={'name': key, "value": val})
 
         self.log.debug("get_mpiexec_global_options: template %s return options %s",
-                       self.MPIEXEC_TEMPLATE_GLOBAL_OPTION, global_options)
-        return global_options
+                       self.MPIEXEC_TEMPLATE_GLOBAL_OPTION, opts)
+        return opts
 
     def get_mpiexec_opts_from_env(self):
         """
@@ -1020,41 +829,37 @@ class MPI(object):
         command line argument.
         """
 
+        opts = CmdList()
         self.log.debug("get_mpiexec_opts_from_env: variables (and current value) to pass: %s",
                        [[x, os.environ[x]] for x in self.mpiexec_opts_from_env])
 
         if '%(commaseparated)s' in self.OPTS_FROM_ENV_TEMPLATE:
             self.log.debug("get_mpiexec_opts_from_env: found commaseparated in template.")
-            environment_options = [self.OPTS_FROM_ENV_TEMPLATE %
-                                   {'commaseparated': ','.join(self.mpiexec_opts_from_env)}]
+            tmpl_vals = {'commaseparated': ','.join(self.mpiexec_opts_from_env)}
+            opts.add(self.OPTS_FROM_ENV_TEMPLATE, tmpl_vals=tmpl_vals)
         else:
-            environment_options = [self.OPTS_FROM_ENV_TEMPLATE %
-                                   {'name': x, 'value': os.environ[x]} for x in self.mpiexec_opts_from_env]
+            for key in self.mpiexec_opts_from_env:
+                opts.add(self.OPTS_FROM_ENV_TEMPLATE, tmpl_vals={'name': key, 'value': os.environ[key]})
 
-        self.log.debug("get_mpiexec_opts_from_env: template %s return options %s",
-                       self.OPTS_FROM_ENV_TEMPLATE, environment_options)
-        return environment_options
+        self.log.debug("get_mpiexec_opts_from_env: template %s return options %s", self.OPTS_FROM_ENV_TEMPLATE, opts)
+        return opts
 
     ### BEGIN mpirun ###
     def make_mpirun(self):
         """Make the mpirun command (or whatever). It typically consists of a mpdboot and a mpiexec part."""
 
-        self.mpirun_cmd = ['mpirun']
+        self.mpirun_cmd = CmdList('mpirun')
 
         self._make_final_mpirun_cmd()
         if self.options.mpirunoptions is not None:
-            self.mpirun_cmd.append(self.options.mpirunoptions)
+            self.mpirun_cmd.add(self.options.mpirunoptions.split(' '))
             self.log.debug("make_mpirun: added user provided options %s", self.options.mpirunoptions)
 
         if self.pinning_override_type is not None:
-            self.mpirun_cmd.append(self.pinning_override())
+            self.mpirun_cmd.add(self.pinning_override())
 
-        # the executable
-        # use undocumented subprocess API call to quote whitespace (executed with Popen(shell=True))
-        # (see http://stackoverflow.com/questions/4748344/whats-the-reverse-of-shlex-split for alternatives if needed)
-        quoted_args_string = subprocess.list2cmdline(self.cmdargs)
-        self.log.debug("make_mpirun: adding cmdargs %s (quoted %s)", self.cmdargs, quoted_args_string)
-        self.mpirun_cmd.append(quoted_args_string)
+        self.log.debug("make_mpirun: adding cmdargs %s", self.cmdargs)
+        self.mpirun_cmd.add(self.cmdargs)
 
     def _make_final_mpirun_cmd(self):
         """
@@ -1062,8 +867,8 @@ class MPI(object):
 
         Append the mpdboot and mpiexec options to the command.
         """
-        self.mpirun_cmd += self.mpdboot_options
-        self.mpirun_cmd += self.mpiexec_options
+        self.mpirun_cmd.add(self.mpdboot_options)
+        self.mpirun_cmd.add(self.mpiexec_options)
 
     def pinning_override(self):
         """overriding the pinning method has to be handled by the flavor"""

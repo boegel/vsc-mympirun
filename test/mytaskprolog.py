@@ -1,5 +1,5 @@
 #
-# Copyright 2011-2020 Ghent University
+# Copyright 2019-2020 Ghent University
 #
 # This file is part of vsc-mympirun,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -23,7 +23,32 @@
 # along with vsc-mympirun.  If not, see <http://www.gnu.org/licenses/>.
 #
 """
-Allow other packages to extend this namespace, zip safe setuptools style
+End-to-end tests for mypmirun
 """
-import pkg_resources
-pkg_resources.declare_namespace(__name__)
+
+import os
+
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
+from pmi_utils import PMITest
+from vsc.utils.affinity import sched_getaffinity, sched_setaffinity
+
+
+class TaskPrologEnd2End(PMITest):
+    def setUp(self):
+        """Prepare to run test."""
+        super(TaskPrologEnd2End, self).setUp()
+        self.script = os.path.join(os.path.dirname(self.script), 'mytaskprolog.py')
+
+    def test_simple(self):
+        origaff = sched_getaffinity()
+
+        aff = sched_getaffinity()
+        aff.set_bits([1])  # only use first core (we can always assume there is one core
+
+        sched_setaffinity(aff)
+        self.pmirun([], pattern='export CUDA_VISIBLE_DEVICES=0')
+
+        # restore
+        sched_setaffinity(origaff)

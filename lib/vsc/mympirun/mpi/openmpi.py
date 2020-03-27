@@ -1,5 +1,5 @@
 #
-# Copyright 2009-2018 Ghent University
+# Copyright 2009-2020 Ghent University
 #
 # This file is part of vsc-mympirun,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -29,9 +29,11 @@ Documentation can be found at https://www.open-mpi.org/doc/
 import os
 import re
 import sys
-
-from vsc.mympirun.mpi.mpi import MPI, version_in_range
 from vsc.utils.missing import nub
+from vsc.utils.run import CmdList
+
+from vsc.mympirun.common import version_in_range
+from vsc.mympirun.mpi.mpi import MPI
 
 
 SLURM_EXPORT_ENV = 'SLURM_EXPORT_ENV'
@@ -45,11 +47,16 @@ class OpenMPI(MPI):
     _mpirun_for = 'OpenMPI'
     _mpirun_version = staticmethod(lambda ver: version_in_range(ver, None, '1.7.0'))
 
-    DEVICE_MPIDEVICE_MAP = {'ib': 'sm,openib,self', 'det': 'sm,tcp,self', 'shm': 'sm,self', 'socket': 'sm,tcp,self'}
+    DEVICE_MPIDEVICE_MAP = {
+        'det': 'sm,tcp,self',
+        'ib': 'sm,openib,self',
+        'shm': 'sm,self',
+        'socket': 'sm,tcp,self',
+    }
 
-    MPIEXEC_TEMPLATE_GLOBAL_OPTION = "--mca %(name)s '%(value)s'"
+    MPIEXEC_TEMPLATE_GLOBAL_OPTION = ['--mca', '%(name)s', "%(value)s"]
 
-    REMOTE_OPTION_TEMPLATE = "--mca pls_rsh_agent %(rsh)s"
+    REMOTE_OPTION_TEMPLATE = ['--mca', 'pls_rsh_agent', '%(rsh)s']
 
     def set_mpiexec_global_options(self):
         """Set mpiexec global options"""
@@ -66,7 +73,7 @@ class OpenMPI(MPI):
         Create the acual mpirun command
         OpenMPI doesn't need mpdboot options
         """
-        self.mpirun_cmd += self.mpiexec_options
+        self.mpirun_cmd.add(self.mpiexec_options)
 
     def determine_sockets_per_node(self):
         """
@@ -130,7 +137,7 @@ class OpenMPI(MPI):
 
             open(rankfn, 'w').write(ranktxt)
             self.log.debug("pinning_override: wrote rankfile %s:\n%s", rankfn, ranktxt)
-            cmd = "-rf %s" % rankfn
+            cmd = CmdList('-rf', rankfn)
 
         except IOError:
             self.log.raiseException('pinning_override: failed to write rankfile %s' % rankfn)
@@ -171,7 +178,7 @@ class OpenMPI(MPI):
         # (unless OpenMPI installation was configured with --enable-orterun-prefix-by-default)
         # cfr. https://www.mail-archive.com/devel@lists.open-mpi.org/msg17305.html
         if SLURM_EXPORT_ENV in os.environ:
-            self.log.info("Undefining $SLURM_EXPORT_ENV (was '%s')", SLURM_EXPORT_ENV, os.getenv(SLURM_EXPORT_ENV))
+            self.log.info("Undefining $%s (was '%s')", SLURM_EXPORT_ENV, os.getenv(SLURM_EXPORT_ENV))
             del os.environ[SLURM_EXPORT_ENV]
 
         super(OpenMPI, self).prepare()
@@ -185,7 +192,7 @@ class OpenMpiOversubscribe(OpenMPI):
     when requesting more processes than available processors.
     """
 
-    _mpirun_version = staticmethod(lambda ver: version_in_range(ver, '1.7.0', None))
+    _mpirun_version = staticmethod(lambda ver: version_in_range(ver, '1.7.0', '3'))
 
 
     def set_mpiexec_options(self):
@@ -193,4 +200,22 @@ class OpenMpiOversubscribe(OpenMPI):
         super(OpenMPI, self).set_mpiexec_options()
 
         if self.multiplier > 1 or len(self.mpinodes) > self.ppn:
-            self.mpiexec_options.append("--oversubscribe")
+            self.mpiexec_options.add("--oversubscribe")
+
+
+class OpenMpi3(OpenMpiOversubscribe):
+
+    """
+    An implementation of the MPI class for OpenMPI 3.x & more recent.
+    """
+
+    _mpirun_version = staticmethod(lambda ver: version_in_range(ver, '3', None))
+
+    # 'sm' BTL (Byte Transfer Layer) was replaced by the 'vader' BTL
+    # cfr. https://www.open-mpi.org/faq/?category=sm
+    DEVICE_MPIDEVICE_MAP = {
+        'det': 'vader,tcp,self',
+        'ib': 'vader,openib,self',
+        'shm': 'vader,self',
+        'socket': 'vader,tcp,self',
+    }

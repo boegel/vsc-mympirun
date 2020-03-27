@@ -1,5 +1,5 @@
 #
-# Copyright 2009-2018 Ghent University
+# Copyright 2009-2020 Ghent University
 #
 # This file is part of vsc-mympirun,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -27,7 +27,7 @@ Torque / PBS
 """
 import os
 
-from vsc.mympirun.mpi.mpi import which
+from vsc.mympirun.common import which
 from vsc.mympirun.rm.sched import Sched
 from vsc.utils.missing import nub
 

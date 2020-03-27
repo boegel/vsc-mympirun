@@ -1,5 +1,5 @@
 #
-# Copyright 2012-2017 Ghent University
+# Copyright 2012-2020 Ghent University
 #
 # This file is part of vsc-mympirun,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -31,15 +31,14 @@ Tests for the vsc.mympirun.mpi.sched module.
 """
 import copy
 import os
-import shutil
 import stat
-import tempfile
-import unittest
+from vsc.install.testing import TestCase
 from vsc.utils.missing import nub
 
 from vsc.mympirun.factory import getinstance
+from vsc.mympirun.common import what_sched, get_local_sched
 import vsc.mympirun.mpi.mpi as mpim
-from vsc.mympirun.option import MympirunOption
+from vsc.mympirun.mpi.option import MympirunOption
 import vsc.mympirun.rm.sched as schedm
 from vsc.mympirun.rm.local import Local
 from vsc.mympirun.rm.pbs import PBS
@@ -91,6 +90,9 @@ def set_SLURM_env(tmpdir):
     os.environ['SLURM_TASKS_PER_NODE'] = '2,1(x2)'
     os.environ['SLURM_EXPORT_ENV'] = 'NONE'
 
+    # make sure tmpdir is writeable (it may have been made read-only by set_PBS_env)
+    os.chmod(tmpdir, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+
     scontrol = os.path.join(tmpdir, 'scontrol')
     fh = open(scontrol, 'w')
     fh.write("#!/bin/bash\necho node1\necho node2\necho node3\n")
@@ -111,19 +113,21 @@ def reset_env(orig_env):
             os.environ[key] = orig_env[key]
 
 
-class TestSched(unittest.TestCase):
+class TestSched(TestCase):
     """tests for vsc.mympirun.mpi.sched functions"""
 
     def setUp(self):
         """Set up test"""
+        super(TestSched, self).setUp()
+
         self.orig_environ = copy.deepcopy(os.environ)
-        self.tmpdir = tempfile.mkdtemp()
 
     def tearDown(self):
         """Clean up after running test."""
         cleanup_PBS_env()
         reset_env(self.orig_environ)
-        shutil.rmtree(self.tmpdir)
+
+        super(TestSched, self).setUp()
 
     def test_what_sched(self):
         """Test what_sched function."""
@@ -132,7 +136,7 @@ class TestSched(unittest.TestCase):
 
         # if scheduler is specified, then just return corresponding class
         for key, val in SCHEDDICT.iteritems():
-            sched, found_sched = schedm.what_sched(key)
+            sched, found_sched = what_sched(key, schedm)
             self.assertEqual(sched, val)
             self.assertEqual(found_sched, expected_found_sched)
 
@@ -144,14 +148,14 @@ class TestSched(unittest.TestCase):
         # if scheduler is not specified, environment determines which scheduler is selected
 
         # if not in PBS/SLURM environment, local scheduler is used
-        sched, found_sched = schedm.what_sched(None)
+        sched, found_sched = what_sched(None, schedm)
         self.assertEqual(sched, Local)
         self.assertEqual(found_sched, expected_found_sched)
 
         # if PBS environment variables are set, use PBS scheduler
         os.environ['PBS_JOBID'] = '12345'
         os.environ['PBS_NODEFILE'] = '/tmp/12345.pbs_nodefile'
-        sched, found_sched = schedm.what_sched(None)
+        sched, found_sched = what_sched(None, schedm)
         self.assertEqual(sched, PBS)
         self.assertEqual(found_sched, expected_found_sched)
 
@@ -159,13 +163,13 @@ class TestSched(unittest.TestCase):
         # (even when PBS environment variables are also set)
         os.environ['SLURM_JOBID'] = '98765'
         os.environ['SLURM_NODELIST'] = 'node[100-102]'
-        sched, found_sched = schedm.what_sched(None)
+        sched, found_sched = what_sched(None, schedm)
         self.assertEqual(sched, SLURM)
         self.assertEqual(found_sched, expected_found_sched)
 
         del os.environ['PBS_JOBID']
         del os.environ['PBS_NODEFILE']
-        sched, found_sched = schedm.what_sched(None)
+        sched, found_sched = what_sched(None, schedm)
         self.assertEqual(sched, SLURM)
         self.assertEqual(found_sched, expected_found_sched)
 
@@ -269,5 +273,5 @@ class TestSched(unittest.TestCase):
 
     def test_get_local_sched(self):
         """ Test get_local_sched function """
-        self.assertEqual(schedm.get_local_sched(SCHEDDICT.values()), Local)
-        self.assertEqual(schedm.get_local_sched([]), None)
+        self.assertEqual(get_local_sched(SCHEDDICT.values()), Local)
+        self.assertEqual(get_local_sched([]), None)

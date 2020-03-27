@@ -1,5 +1,5 @@
 #
-# Copyright 2011-2020 Ghent University
+# Copyright 2019-2020 Ghent University
 #
 # This file is part of vsc-mympirun,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -23,7 +23,24 @@
 # along with vsc-mympirun.  If not, see <http://www.gnu.org/licenses/>.
 #
 """
-Allow other packages to extend this namespace, zip safe setuptools style
+PMI instances to track version and flavours etc etc
 """
-import pkg_resources
-pkg_resources.declare_namespace(__name__)
+
+PMIX = 'pmix'
+PMI = 'pmi'
+
+class PMI(object):
+    FLAVOUR = None
+    VERSION = None
+
+    def __str__(self):
+        return "PMI %s version %s" % (self.FLAVOUR, self.VERSION)
+
+class PMIv2(PMI):
+    FLAVOUR = PMI
+    VERSION = 2
+
+
+class PMIxv3(PMI):
+    FLAVOUR = PMIX
+    VERSION = 3

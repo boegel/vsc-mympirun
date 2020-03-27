@@ -1,5 +1,5 @@
 #
-# Copyright 2012-2017 Ghent University
+# Copyright 2012-2020 Ghent University
 #
 # This file is part of vsc-mympirun,
 # originally created by the HPC team of Ghent University (http://ugent.be/hpc/en),
@@ -29,6 +29,9 @@ End-to-end tests for mympirun (with mocking of real 'mpirun' command).
 @author: Kenneth Hoste (HPC-UGent)
 @author: Caroline De Brouwer (HPC-UGent)
 """
+import logging
+logging.basicConfig(level=logging.DEBUG)
+
 import copy
 import glob
 import os
@@ -39,10 +42,12 @@ import sys
 import tempfile
 import unittest
 import vsc.mympirun.rm.sched as schedm
+from vsc.install.testing import TestCase
 from vsc.utils.missing import nub
 from vsc.utils.run import run
 
-from vsc.mympirun.mpi.mpi import MPI, which
+from vsc.mympirun.common import which, what_sched
+from vsc.mympirun.mpi.mpi import MPI
 from vsc.mympirun.rm.local import Local
 from vsc.mympirun.rm.pbs import PBS
 from sched import cleanup_PBS_env, reset_env, set_PBS_env, set_SLURM_env
@@ -71,6 +76,8 @@ fi
 
 def install_fake_mpirun(cmdname, path, mpi_name, mpi_version, txt=None):
     """Install fake mpirun command with given name in specified location"""
+    if not os.path.exists(path):
+        os.makedirs(path)
     fake_mpirun = os.path.join(path, cmdname)
     if not txt:
         txt = FAKE_MPIRUN
@@ -81,11 +88,13 @@ def install_fake_mpirun(cmdname, path, mpi_name, mpi_version, txt=None):
     os.environ['EBVERSION%s' % mpi_name.upper()] = mpi_version
 
 
-class TestEnd2End(unittest.TestCase):
+class TestEnd2End(TestCase):
     """End-to-end tests for mympirun"""
 
     def setUp(self):
         """Prepare to run test."""
+        super(TestEnd2End, self).setUp()
+
         self.orig_environ = copy.deepcopy(os.environ)
 
         # add /bin to $PATH, /lib to $PYTHONPATH
@@ -95,7 +104,7 @@ class TestEnd2End(unittest.TestCase):
         # make sure subshell finds .egg files by adding them to the pythonpath
         eggs = ':'.join(glob.glob(os.path.join(self.topdir, '.eggs', '*.egg')))
         os.environ['PYTHONPATH'] = '%s:%s:%s' % (eggs, lib, os.getenv('PYTHONPATH', ''))
-        self.tmpdir = tempfile.mkdtemp()
+
         os.environ['HOME'] = self.tmpdir
         mpdconf = open(os.path.join(self.tmpdir, '.mpd.conf'), 'w')
         mpdconf.write("password=topsecretpassword")
@@ -113,7 +122,6 @@ class TestEnd2End(unittest.TestCase):
         self.assertTrue(os.path.samefile(os.path.dirname(out), expected_path), "%s not in %s" % (out, expected_path))
 
         # set variables that exist within jobs, but not locally, for testing
-        self.tmpdir = tempfile.mkdtemp()
         pbs_tmpdir = os.path.join(self.tmpdir, 'pbs')
         os.makedirs(pbs_tmpdir)
         set_PBS_env(pbs_tmpdir)
@@ -121,9 +129,10 @@ class TestEnd2End(unittest.TestCase):
     def tearDown(self):
         """Clean up after running test."""
         cleanup_PBS_env()
-        os.chmod(self.tmpdir, stat.S_IRUSR|stat.S_IWUSR|stat.S_IXUSR)
-        shutil.rmtree(self.tmpdir)
+        os.chmod(self.tmpdir, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
         reset_env(self.orig_environ)
+
+        super(TestEnd2End, self).tearDown()
 
     def test_serial(self):
         """Test running of a serial command via mympirun."""
@@ -136,19 +145,25 @@ class TestEnd2End(unittest.TestCase):
         self.assertTrue(regex.match(out.strip()), "Pattern '%s' found in: %s" % (regex.pattern, out))
 
     def test_sched(self):
-        """ Test --sched(type) option """
-        install_fake_mpirun('mpirun', self.tmpdir, 'impi', '5.1.2')
+        """Test --sched(type) option."""
+
         regex_tmpl = "^fake mpirun called with args: .*%s.* hostname$"
-        testcases = {
-            'impirun': "-genv I_MPI_DEVICE 'shm'",
-            'ompirun': "--mca btl 'sm,.*self'",
-        }
-        for key in testcases:
-            ec, out = run([sys.executable, self.mympiscript, '--setmpi', key, '--sched', 'local', 'hostname'])
+
+        def run_test(mpi_name, mpi_ver, mpirun, pattern):
+            """Utilitiy function to run test for a specific case."""
+            tmpdir = os.path.join(self.tmpdir, '%s-%s' % (mpi_name, mpi_ver))
+            install_fake_mpirun('mpirun', tmpdir, mpi_name, mpi_ver)
+
+            ec, out = run([sys.executable, self.mympiscript, '--setmpi', mpirun, '--sched', 'local', 'hostname'])
             self.assertEqual(ec, 0, "Command exited normally: exit code %s; output: %s" % (ec, out))
-            regex = re.compile(regex_tmpl % testcases[key])
+            regex = re.compile(regex_tmpl % pattern)
             self.assertTrue(regex.match(out.strip()), "Pattern '%s' found in: %s" % (regex.pattern, out))
 
+        run_test('impi', '4.0.0', 'impirun', "-genv I_MPI_DEVICE shm")
+        run_test('impi', '5.1.2', 'impirun', "-genv I_MPI_FABRICS shm")
+        run_test('openmpi', '1.5', 'ompirun', "--mca btl sm,.*self")
+        run_test('openmpi', '2.5', 'ompirun', "--mca btl sm,.*self")
+        run_test('openmpi', '3.1', 'ompirun', "--mca btl vader,.*self")
 
     def test_output(self):
         """ Test --output option """
@@ -354,11 +369,11 @@ class TestEnd2End(unittest.TestCase):
 
     def test_unset_nodefile(self):
         """ Test if sched falls back to Local if nodefile is not available """
-        self.assertEqual(schedm.what_sched(False)[0], PBS)
+        self.assertEqual(what_sched(False, schedm)[0], PBS)
         nodefile = os.environ['PBS_NODEFILE']
         del os.environ['PBS_NODEFILE']
         # fall back to local if PBS_NODEFILE is not available
-        self.assertEqual(schedm.what_sched(False)[0], Local)
+        self.assertEqual(what_sched(False, schedm)[0], Local)
         # restore env
         os.environ['PBS_NODEFILE'] = nodefile
 
@@ -453,8 +468,8 @@ class TestEnd2End(unittest.TestCase):
         self.assertEqual(ec, 0, "Command exited normally: exit code %s; output: %s" % (ec, out))
 
         # make sure output includes defined environment variables
-        # and "--mca orte_keep_fqdn_hostnames '1'"
-        mca_keep_fqdn = "^fake mpirun called with args:.*--mca orte_keep_fqdn_hostnames '1'.*hostname$"
+        # and "--mca orte_keep_fqdn_hostnames 1"
+        mca_keep_fqdn = "^fake mpirun called with args:.*--mca orte_keep_fqdn_hostnames 1 .*hostname$"
         for pattern in ['^HOME=', '^USER=', '^SLURM_JOBID=', mca_keep_fqdn]:
             regex = re.compile(pattern, re.M)
             self.assertTrue(regex.search(out), "Pattern '%s' found in: %s" % (regex.pattern, out))
