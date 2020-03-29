@@ -200,7 +200,7 @@ class TestMPI(TestCase):
         # matches "IP address / netmask"
         reg = re.compile(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}")
         print("netmask: %s" % mpi_instance.netmask)
-        for substr in mpi_instance.netmask.split(sep=':'):
+        for substr in mpi_instance.netmask.split(':'):
             try:
                 IP(substr)
             except ValueError:
