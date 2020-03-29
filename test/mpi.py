@@ -33,7 +33,6 @@ import os
 import pkgutil
 import re
 import stat
-import string
 
 from vsc.install.testing import TestCase
 from vsc.utils.run import run
@@ -112,9 +111,9 @@ class TestMPI(TestCase):
                 raise Exception("Something went wrong while trying to run `which`: %s" % unixwhich)
 
             self.assertTrue(mpiwhich, msg="mpi which did not return anything, (unix which: %s" % unixwhich)
-            self.assertEqual(mpiwhich, string.strip(unixwhich),
-                             msg="the return values of unix which and which() aren't"" the same: %s != %s" %
-                             (mpiwhich, string.strip(unixwhich)))
+            self.assertEqual(mpiwhich, unixwhich.strip(),
+                             msg="the return values of unix which and which() aren't the same: %s != %s" %
+                             (mpiwhich, unixwhich.strip()))
 
      ###################
      ## MPI functions ##
@@ -201,7 +200,7 @@ class TestMPI(TestCase):
         # matches "IP address / netmask"
         reg = re.compile(r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}")
         print("netmask: %s" % mpi_instance.netmask)
-        for substr in string.split(mpi_instance.netmask, sep=":"):
+        for substr in mpi_instance.netmask.split(sep=':'):
             try:
                 IP(substr)
             except ValueError:
