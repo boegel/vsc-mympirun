@@ -78,7 +78,7 @@ class PMITest(TestCase):
         os.environ['PYTHONPATH'] = '%s:%s:%s' % (eggs, lib, os.getenv('PYTHONPATH', ''))
 
         # make sure we're using the right mympirun installation...
-        ec, out = run([sys.executable, '-c', "import vsc.mympirun; print vsc.mympirun.__file__"])
+        ec, out = run([sys.executable, '-c', "import vsc.mympirun; print(vsc.mympirun.__file__)"])
         out = out.strip()
         expected_path = os.path.join(self.topdir, 'lib', 'vsc', 'mympirun')
         self.assertTrue(os.path.samefile(os.path.dirname(out), expected_path), "%s not in %s" % (out, expected_path))
