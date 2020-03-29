@@ -312,7 +312,7 @@ class TestMPI(TestCase):
         """test if mpiexec_opts_from_env only contains environment variables that start with the given prefix"""
         mpi_instance = getinstance(mpim.MPI, Local, MympirunOption())
 
-        if not os.environ.has_key('PYTHONPATH'):
+        if 'PYTHONPATH' not in os.environ:
             os.environ[key] = "/example:/test/123"
         mpi_instance.set_mpiexec_opts_from_env()
         prefixes = mpi_instance.OPTS_FROM_ENV_FLAVOR_PREFIX
