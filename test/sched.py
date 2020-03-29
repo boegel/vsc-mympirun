@@ -185,11 +185,11 @@ class TestSched(TestCase):
             elif key == 'slurm':
                 set_SLURM_env(self.tmpdir)
 
+            inst = getinstance(mpim.MPI, val, MympirunOption())
             expected = None
             if inst.SCHED_ENVIRON_ID is not None:
                 expected = os.environ.get(inst.SCHED_ENVIRON_ID)
 
-            inst = getinstance(mpim.MPI, val, MympirunOption())
             self.assertTrue(inst.sched_id == expected or
                             inst.sched_id.startswith("SCHED_%s" % inst.__class__.__name__))
 
