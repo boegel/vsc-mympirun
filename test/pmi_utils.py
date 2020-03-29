@@ -32,6 +32,7 @@ import sys
 import re
 
 from vsc.install.testing import TestCase
+from vsc.utils.py2vs3 import is_string
 from vsc.utils.run import run
 
 from sched import reset_env
@@ -118,7 +119,7 @@ class PMITest(TestCase):
         return mpirun
 
     def set_env(self, env):
-        if isinstance(env, basestring):
+        if is_string(env):
             for line in env.split("\n"):
                 if '=' in line:
                     os.environ.update(dict([line.strip().split("=", 1)]))
