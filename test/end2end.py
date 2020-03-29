@@ -350,7 +350,7 @@ class TestEnd2End(TestCase):
         ]
         ec, out = run(command)
 
-        for key in nub(filter(os.environ.has_key, MPI.OPTS_FROM_ENV_BASE)):
+        for key in nub(filter(lambda key: key in os.environ, MPI.OPTS_FROM_ENV_BASE)):
             self.assertTrue(key in out, "%s is not in out" % key)
 
         regex = r'.*-envlist [^ ]*USER.*'
